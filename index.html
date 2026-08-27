@@ -56,6 +56,8 @@
   .med-card-top{display:flex;justify-content:space-between;align-items:flex-start;gap:10px}
   .med-card-name{font-size:16px;font-weight:700;color:var(--ink)}
   .med-card-dose{font-size:12.5px;color:var(--ink-soft);margin-top:2px}
+  .med-card-actions{display:flex;gap:4px;flex-shrink:0}
+  .med-edit{background:none;border:none;font-size:15px;cursor:pointer;padding:2px 4px;line-height:1}
   .med-del{background:none;border:none;color:#B7BFBD;font-size:18px;cursor:pointer;padding:2px 4px;line-height:1}
   .times-row{display:flex;flex-wrap:wrap;gap:8px;margin-top:12px}
   .time-chip{
@@ -159,7 +161,7 @@
 
 <div class="sheet-overlay" id="overlay">
   <div class="sheet">
-    <h2>Nuevo medicamento</h2>
+    <h2 id="sheetTitulo">Nuevo medicamento</h2>
     <div class="campo">
       <label>Nombre</label>
       <input type="text" id="inputNombre" placeholder="Ej. Losartán">
@@ -246,14 +248,19 @@ function renderNextCard(){
   candidatos.sort((a,b)=> a.hora.localeCompare(b.hora));
   let futuros = candidatos.filter(c=> c.hora >= ahora);
   const el = document.getElementById('nextCard');
-  const elegido = futuros[0] || candidatos[0];
-  if (!elegido){
+  const base = futuros.length ? futuros : candidatos;
+  if (base.length === 0){
     el.innerHTML = '<div class="eyebrow">Próxima toma</div><div class="none">'+(meds.length? 'Ya tomaste todo lo de hoy 🎉' : 'Agrega un medicamento para empezar')+'</div>';
     return;
   }
-  el.innerHTML = '<div class="eyebrow">Próxima toma</div>'+
-    '<div class="med-name">'+elegido.nombre+'</div>'+
-    '<div class="med-time">'+elegido.hora+(elegido.dosis? ' · '+elegido.dosis:'')+'</div>';
+  // Todos los que coinciden con la hora mas proxima, no solo el primero
+  const horaProxima = base[0].hora;
+  const empatados = base.filter(c=> c.hora === horaProxima);
+  el.innerHTML = '<div class="eyebrow">Próxima toma · '+horaProxima+'</div>'+
+    empatados.map(c=>
+      '<div class="med-name" style="margin-top:6px">'+c.nombre+'</div>'+
+      (c.dosis? '<div class="med-time">'+c.dosis+'</div>' : '')
+    ).join('');
 }
 
 function renderLista(){
@@ -275,7 +282,10 @@ function renderLista(){
     return '<div class="med-card">'+
       '<div class="med-card-top">'+
         '<div><div class="med-card-name">'+m.nombre+'</div>'+(m.dosis?'<div class="med-card-dose">'+m.dosis+'</div>':'')+'</div>'+
-        '<button class="med-del" onclick="borrarMed(\''+m.id+'\')">🗑</button>'+
+        '<div class="med-card-actions">'+
+          '<button class="med-edit" onclick="abrirForm(\''+m.id+'\')">✏️</button>'+
+          '<button class="med-del" onclick="borrarMed(\''+m.id+'\')">🗑</button>'+
+        '</div>'+
       '</div>'+
       '<div class="times-row">'+chips+'</div>'+
     '</div>';
@@ -310,18 +320,32 @@ function nuevaFilaHora(valor){
   horasLista.appendChild(fila);
 }
 
-function abrirForm(){
-  document.getElementById('inputNombre').value = '';
-  document.getElementById('inputDosis').value = '';
+function abrirForm(idEditar){
+  medEditandoId = idEditar || null;
+  const sheetTitulo = document.getElementById('sheetTitulo');
   horasLista.innerHTML = '';
-  nuevaFilaHora('08:00');
+  if (medEditandoId){
+    const m = meds.find(x=> x.id === medEditandoId);
+    sheetTitulo.textContent = 'Editar medicamento';
+    document.getElementById('inputNombre').value = m.nombre;
+    document.getElementById('inputDosis').value = m.dosis || '';
+    m.horas.slice().sort().forEach(h=> nuevaFilaHora(h));
+  } else {
+    sheetTitulo.textContent = 'Nuevo medicamento';
+    document.getElementById('inputNombre').value = '';
+    document.getElementById('inputDosis').value = '';
+    nuevaFilaHora('08:00');
+  }
   overlay.classList.add('abierto');
 }
 function cerrarForm(){
   overlay.classList.remove('abierto');
+  medEditandoId = null;
 }
 
-document.getElementById('btnAbrirForm').addEventListener('click', abrirForm);
+let medEditandoId = null;
+
+document.getElementById('btnAbrirForm').addEventListener('click', ()=> abrirForm());
 document.getElementById('btnCancelar').addEventListener('click', cerrarForm);
 document.getElementById('btnAgregarHora').addEventListener('click', ()=> nuevaFilaHora());
 overlay.addEventListener('click', (e)=>{ if (e.target === overlay) cerrarForm(); });
@@ -338,14 +362,21 @@ document.getElementById('btnGuardar').addEventListener('click', ()=>{
     mostrarToast('Agrega al menos un horario');
     return;
   }
-  meds.push({
-    id: 'med_'+Date.now(),
-    nombre, dosis, horas
-  });
+  if (medEditandoId){
+    const m = meds.find(x=> x.id === medEditandoId);
+    m.nombre = nombre;
+    m.dosis = dosis;
+    m.horas = horas;
+  } else {
+    meds.push({
+      id: 'med_'+Date.now(),
+      nombre, dosis, horas
+    });
+  }
   guardarMeds(meds);
   cerrarForm();
   render();
-  mostrarToast('Medicamento agregado');
+  mostrarToast(medEditandoId ? 'Medicamento actualizado' : 'Medicamento agregado');
 });
 
 // ---------- Toast ----------
